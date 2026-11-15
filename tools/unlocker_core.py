@@ -1,8 +1,8 @@
-import os
-import sys
 import ctypes
-import subprocess
 import json
+import os
+import subprocess
+import sys
 import time
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -12,13 +12,18 @@ if parent_dir not in sys.path:
 if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
-from tools.backup_manager import create_backup, restore_backup, list_backups
+from tools.backup_manager import create_backup, list_backups, restore_backup
 from tools.proxy_manager import (
-    find_best_proxy, pin_hosts, unpin_hosts, get_current_pinned_ip,
-    clean_leaking_nrpt_rules, flush_dns_cache
+    clean_leaking_nrpt_rules,
+    find_best_proxy,
+    flush_dns_cache,
+    get_current_pinned_ip,
+    pin_hosts,
+    unpin_hosts,
 )
 
 DEFAULT_BACKEND_URL = "https://daily-cloudcode-pa.googleapis.com"
+
 
 def is_admin():
     """Проверка наличия прав администратора / root."""
@@ -30,17 +35,18 @@ def is_admin():
     else:
         return os.geteuid() == 0
 
+
 def elevate_process(args=None):
     """Перезапуск процесса с правами Администратора / root."""
     if is_admin():
         return True
-    
+
     script = os.path.abspath(sys.argv[0])
     params = args if args is not None else sys.argv[1:]
     executable = sys.executable
 
     print("[*] Запрос прав Администратора для модификации системных параметров...")
-    
+
     if sys.platform == "win32":
         param_str = " ".join([f'"{a}"' for a in params])
         ret = ctypes.windll.shell32.ShellExecuteW(
@@ -49,7 +55,7 @@ def elevate_process(args=None):
             executable,
             f'"{script}" {param_str}',
             None,
-            1 # SW_SHOWNORMAL
+            1,  # SW_SHOWNORMAL
         )
         if ret > 32:
             sys.exit(0)
@@ -61,7 +67,7 @@ def elevate_process(args=None):
         # 'with administrator privileges' уже запускает команду от root (sudo не нужен)
         args_str = " ".join([f"'{a}'" for a in params])
         shell_cmd = f"'{executable}' '{script}' {args_str}".strip()
-        as_cmd = shell_cmd.replace('\\', '\\\\').replace('"', '\\"')
+        as_cmd = shell_cmd.replace("\\", "\\\\").replace('"', '\\"')
         osa = f'do shell script "{as_cmd}" with administrator privileges'
         try:
             res = subprocess.run(["osascript", "-e", osa], capture_output=True, text=True)
@@ -83,6 +89,7 @@ def elevate_process(args=None):
             print(f"[-] Не удалось выполнить sudo: {e}")
             return False
 
+
 def get_binary_paths():
     """Поиск всех исполняемых файлов Language Server и CLI agy на текущей ОС."""
     candidate_paths = []
@@ -94,12 +101,36 @@ def get_binary_paths():
         user_prof = os.environ.get("USERPROFILE", home)
 
         candidate_paths += [
+            os.path.join(user_prof, ".gemini", "bin", "agy.exe"),
             os.path.join(local_app, "Programs", "antigravity", "resources", "bin", "language_server.exe"),
             os.path.join(local_app, "Programs", "antigravity", "resources", "bin", "agy.exe"),
-            os.path.join(local_app, "Programs", "Antigravity IDE", "resources", "app", "extensions", "antigravity", "bin", "language_server_windows_x64.exe"),
-            os.path.join(local_app, "Programs", "Antigravity IDE", "resources", "app", "extensions", "antigravity", "bin", "language_server.exe"),
+            os.path.join(
+                local_app,
+                "Programs",
+                "Antigravity IDE",
+                "resources",
+                "app",
+                "extensions",
+                "antigravity",
+                "bin",
+                "language_server_windows_x64.exe",
+            ),
+            os.path.join(
+                local_app,
+                "Programs",
+                "Antigravity IDE",
+                "resources",
+                "app",
+                "extensions",
+                "antigravity",
+                "bin",
+                "language_server.exe",
+            ),
+            os.path.join(
+                local_app, "Programs", "Antigravity IDE", "resources", "app", "extensions", "agy", "bin", "agy.exe"
+            ),
             os.path.join(user_prof, ".antigravity", "bin", "language_server.exe"),
-            os.path.join(user_prof, ".antigravity", "bin", "agy.exe")
+            os.path.join(user_prof, ".antigravity", "bin", "agy.exe"),
         ]
         ext_dir = os.path.join(user_prof, ".antigravity", "extensions")
         if os.path.exists(ext_dir):
@@ -109,14 +140,17 @@ def get_binary_paths():
                         candidate_paths.append(os.path.join(root, f))
     elif sys.platform == "darwin":
         candidate_paths += [
+            os.path.join(home, ".gemini", "bin", "agy"),
+            os.path.join(home, ".local", "bin", "agy"),
             "/Applications/Antigravity IDE.app/Contents/Resources/app/extensions/antigravity/bin/language_server_macos_arm",
             "/Applications/Antigravity IDE.app/Contents/Resources/app/extensions/antigravity/bin/language_server_macos_x64",
+            "/Applications/Antigravity IDE.app/Contents/Resources/app/extensions/agy/bin/language_server_macos_arm",
+            "/Applications/Antigravity IDE.app/Contents/Resources/app/extensions/agy/bin/language_server_macos_x64",
             "/Applications/Antigravity.app/Contents/Resources/app/extensions/antigravity/bin/language_server_macos_arm",
             "/Applications/Antigravity.app/Contents/Resources/app/extensions/antigravity/bin/language_server_macos_x64",
-            os.path.join(home, ".local", "bin", "agy"),
             os.path.join(home, "Library", "Application Support", "Antigravity", "bin", "language_server"),
             os.path.join(home, ".antigravity", "bin", "language_server"),
-            os.path.join(home, ".antigravity", "bin", "agy")
+            os.path.join(home, ".antigravity", "bin", "agy"),
         ]
         ext_dir = os.path.join(home, ".antigravity", "extensions")
         if os.path.exists(ext_dir):
@@ -127,14 +161,17 @@ def get_binary_paths():
     else:
         # Linux
         candidate_paths += [
+            os.path.join(home, ".gemini", "bin", "agy"),
             os.path.join(home, ".local", "bin", "agy"),
             "/opt/Antigravity/resources/app/extensions/antigravity/bin/language_server_linux_x64",
             "/opt/Antigravity/resources/app/extensions/antigravity/bin/language_server_linux_arm64",
             "/opt/Antigravity IDE/resources/app/extensions/antigravity/bin/language_server_linux_x64",
             "/opt/Antigravity IDE/resources/app/extensions/antigravity/bin/language_server_linux_arm64",
+            "/opt/Antigravity IDE/resources/app/extensions/agy/bin/language_server_linux_x64",
+            "/opt/Antigravity IDE/resources/app/extensions/agy/bin/language_server_linux_arm64",
             os.path.join(home, ".local", "share", "antigravity", "bin", "language_server"),
             os.path.join(home, ".antigravity", "bin", "language_server"),
-            os.path.join(home, ".antigravity", "bin", "agy")
+            os.path.join(home, ".antigravity", "bin", "agy"),
         ]
 
     found = []
@@ -143,12 +180,14 @@ def get_binary_paths():
             found.append(p)
     return found
 
+
 def stop_process_by_name(name):
     """Кроссплатформенное завершение процессов."""
     if sys.platform == "win32":
         subprocess.run(["taskkill", "/F", "/IM", name], capture_output=True)
     else:
         subprocess.run(["pkill", "-f", name], capture_output=True)
+
 
 def codesign_mac_binary(bpath):
     """Снятие карантина Gatekeeper и ad-hoc переподпись бинарников на macOS."""
@@ -164,9 +203,13 @@ def codesign_mac_binary(bpath):
         # Если файл находится внутри .app бандла, переподпишем и сам .app
         if "/Applications/Antigravity IDE.app" in bpath:
             subprocess.run(["xattr", "-cr", "/Applications/Antigravity IDE.app"], capture_output=True)
-            subprocess.run(["codesign", "--force", "--deep", "--sign", "-", "/Applications/Antigravity IDE.app"], capture_output=True)
+            subprocess.run(
+                ["codesign", "--force", "--deep", "--sign", "-", "/Applications/Antigravity IDE.app"],
+                capture_output=True,
+            )
     except Exception as e:
         print(f"    [-] Предупреждение codesign: {e}")
+
 
 def patch_binaries():
     bins = get_binary_paths()
@@ -201,6 +244,7 @@ def patch_binaries():
             print(f"  [-] {fname}: Ошибка патчинга: {e}")
     return True
 
+
 def unpatch_binaries():
     bins = get_binary_paths()
     for bpath in bins:
@@ -219,6 +263,7 @@ def unpatch_binaries():
                 codesign_mac_binary(bpath)
         except Exception as e:
             print(f"  [-] {fname}: Ошибка: {e}")
+
 
 def configure_ide_settings(backend_url=DEFAULT_BACKEND_URL):
     home = os.path.expanduser("~")
@@ -251,20 +296,66 @@ def configure_ide_settings(backend_url=DEFAULT_BACKEND_URL):
         print(f"  [-] Ошибка записи settings.json: {e}")
         return False
 
+
 def configure_env_vars(backend_url=DEFAULT_BACKEND_URL):
+    home = os.path.expanduser("~")
     if sys.platform == "win32":
         cmd = f'[Environment]::SetEnvironmentVariable("CLOUD_CODE_URL", "{backend_url}", "User")'
         subprocess.run(["powershell", "-NoProfile", "-Command", cmd], capture_output=True)
+    elif sys.platform == "darwin":
+        # На macOS также устанавливаем через launchctl для GUI приложений
+        try:
+            subprocess.run(["launchctl", "setenv", "CLOUD_CODE_URL", backend_url], capture_output=True)
+        except Exception:
+            pass
+
+    # Экспортируем в шелл-профили для терминальных запусков на Unix
+    if sys.platform in ("darwin", "linux"):
+        for rc_file in [".zshrc", ".bashrc", ".profile"]:
+            rc_path = os.path.join(home, rc_file)
+            if os.path.exists(rc_path):
+                try:
+                    with open(rc_path, "r", encoding="utf-8", errors="ignore") as f:
+                        lines = f.readlines()
+                    cleaned = [l for l in lines if "CLOUD_CODE_URL" not in l]
+                    cleaned.append(f'export CLOUD_CODE_URL="{backend_url}"\n')
+                    with open(rc_path, "w", encoding="utf-8") as f:
+                        f.writelines(cleaned)
+                except Exception:
+                    pass
+
     os.environ["CLOUD_CODE_URL"] = backend_url
     print(f"  [+] Переменная окружения CLOUD_CODE_URL установлена ({backend_url}).")
 
+
 def remove_env_vars():
+    home = os.path.expanduser("~")
     if sys.platform == "win32":
         cmd = '[Environment]::SetEnvironmentVariable("CLOUD_CODE_URL", $null, "User")'
         subprocess.run(["powershell", "-NoProfile", "-Command", cmd], capture_output=True)
+    elif sys.platform == "darwin":
+        try:
+            subprocess.run(["launchctl", "unsetenv", "CLOUD_CODE_URL"], capture_output=True)
+        except Exception:
+            pass
+
+    if sys.platform in ("darwin", "linux"):
+        for rc_file in [".zshrc", ".bashrc", ".profile"]:
+            rc_path = os.path.join(home, rc_file)
+            if os.path.exists(rc_path):
+                try:
+                    with open(rc_path, "r", encoding="utf-8", errors="ignore") as f:
+                        lines = f.readlines()
+                    cleaned = [l for l in lines if "CLOUD_CODE_URL" not in l]
+                    with open(rc_path, "w", encoding="utf-8") as f:
+                        f.writelines(cleaned)
+                except Exception:
+                    pass
+
     if "CLOUD_CODE_URL" in os.environ:
         del os.environ["CLOUD_CODE_URL"]
     print("  [+] Переменная окружения CLOUD_CODE_URL удалена.")
+
 
 def set_ipv4_priority(enable=True):
     if sys.platform == "win32":
@@ -273,6 +364,7 @@ def set_ipv4_priority(enable=True):
         subprocess.run(cmd, capture_output=True)
         status = "включен" if enable else "сброшен"
         print(f"  [+] Приоритет IPv4 над IPv6: {status}.")
+
 
 def execute_unlock(auto_find_proxy=True, target_ip=None, custom_worker_url=None):
     print("=" * 60)
@@ -323,6 +415,7 @@ def execute_unlock(auto_find_proxy=True, target_ip=None, custom_worker_url=None)
     print("=" * 60)
     return True
 
+
 def execute_rollback():
     print("=" * 60)
     print("ПОЛНЫЙ ОТКАТ ВСЕХ ИЗМЕНЕНИЙ (RESTORE)")
@@ -349,6 +442,7 @@ def execute_rollback():
     print("=" * 60)
     return True
 
+
 if __name__ == "__main__":
     if not is_admin():
         elevate_process()
@@ -357,4 +451,3 @@ if __name__ == "__main__":
             execute_rollback()
         else:
             execute_unlock()
-

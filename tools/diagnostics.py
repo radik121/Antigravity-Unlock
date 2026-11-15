@@ -1,8 +1,8 @@
 import os
-import sys
 import socket
-import subprocess
 import ssl
+import subprocess
+import sys
 
 if sys.platform == "win32":
     try:
@@ -18,14 +18,22 @@ TARGET_DOMAINS = [
     "daily-cloudcode-pa.googleapis.com",
     "antigravity-unleash.goog",
     "cloudaicompanion.googleapis.com",
+    "storage.googleapis.com",
+    "antigravity-cli-auto-updater-974169037036.us-central1.run.app",
+    "feedback-pa.googleapis.com",
     "accounts.google.com",
-    "oauth2.googleapis.com"
+    "oauth2.googleapis.com",
 ]
 
 # Известные префиксы прямых серверов Google в РФ / СНГ, блокирующих по Geo-IP
 KNOWN_DIRECT_GOOGLE_PREFIXES = ("172.217.", "142.250.", "216.58.", "173.194.", "74.125.")
 
-HOSTS_PATH = os.path.join(os.environ.get("SystemRoot", "C:\\Windows"), "System32", "drivers", "etc", "hosts") if sys.platform == "win32" else "/etc/hosts"
+HOSTS_PATH = (
+    os.path.join(os.environ.get("SystemRoot", "C:\\Windows"), "System32", "drivers", "etc", "hosts")
+    if sys.platform == "win32"
+    else "/etc/hosts"
+)
+
 
 def check_hosts_pinning():
     print("=" * 60)
@@ -39,7 +47,7 @@ def check_hosts_pinning():
                 line_str = line.strip()
                 if line_str and not line_str.startswith("#"):
                     parts = line_str.split()
-                    if len(parts) >= 2 and any(d in parts[1] for d in ("googleapis.com", "antigravity")):
+                    if len(parts) >= 2 and any(d in parts[1] for d in ("googleapis.com", "antigravity", "run.app")):
                         found_pins.append((parts[0], parts[1]))
         except Exception as e:
             print(f"  [-] Ошибка чтения hosts: {e}")
@@ -51,12 +59,18 @@ def check_hosts_pinning():
     else:
         print("  [!] Внимание: Привязки в hosts отсутствуют! Используется системный DNS.")
 
+
 def check_nrpt_rules():
     if sys.platform != "win32":
         return
     print("=" * 60)
     print("[2] Проверка таблицы правил NRPT (Windows Name Resolution Policy Table):")
-    cmd = ["powershell", "-NoProfile", "-Command", "Get-DnsClientNrptRule -ErrorAction SilentlyContinue | Select-Object Namespace, NameServers, Comment | Format-Table -AutoSize"]
+    cmd = [
+        "powershell",
+        "-NoProfile",
+        "-Command",
+        "Get-DnsClientNrptRule -ErrorAction SilentlyContinue | Select-Object Namespace, NameServers, Comment | Format-Table -AutoSize",
+    ]
     res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="ignore")
     out = res.stdout.strip()
     if out:
@@ -68,6 +82,7 @@ def check_nrpt_rules():
     else:
         print("  [+] Правила NRPT отсутствуют (Безопасно: исключен риск fallback-утечки).")
 
+
 def check_dns_resolving():
     print("=" * 60)
     print("[2/3] Проверка разрешения целевых доменов (Анализ IP-адресов):")
@@ -78,17 +93,18 @@ def check_dns_resolving():
             ip_str = ", ".join(ips)
             # Проверяем, не резолвится ли в прямой IP Google для заблокированных зон
             is_direct = any(any(ip.startswith(p) for p in KNOWN_DIRECT_GOOGLE_PREFIXES) for ip in ips)
-            
+
             if is_direct and "accounts" not in domain and "oauth" not in domain:
-                print(f"  [!] ОПАСНОСТЬ: {domain:35} -> {ip_str} (ПРЯМОЙ GOOGLE IP — БУДЕТ GEO-BLOCK!)")
+                print(f"  [!] ОПАСНОСТЬ: {domain:40} -> {ip_str} (ПРЯМОЙ GOOGLE IP — БУДЕТ GEO-BLOCK!)")
                 leak_detected = True
             else:
-                print(f"  [+] {domain:35} -> {ip_str}")
+                print(f"  [+] {domain:40} -> {ip_str}")
         except Exception as e:
-            print(f"  [-] {domain:35} -> ОШИБКА: {e}")
-    
+            print(f"  [-] {domain:40} -> ОШИБКА: {e}")
+
     if leak_detected:
         print("\n  [ВНИМАНИЕ] Обнаружена утечка прямых IP Google! Рекомендуется активировать анлокер.")
+
 
 def check_tls_connectivity():
     print("=" * 60)
@@ -99,7 +115,7 @@ def check_tls_connectivity():
             with socket.create_connection((domain, 443), timeout=3.0) as sock:
                 with ctx.wrap_socket(sock, server_hostname=domain) as ssock:
                     cert = ssock.getpeercert()
-                    issuer = dict(x[0] for x in cert.get('issuer', [])).get('commonName', 'Unknown')
+                    issuer = dict(x[0] for x in cert.get("issuer", [])).get("commonName", "Unknown")
                     print(f"  [+] TLS 443 OK: {domain:35} (Issuer: {issuer})")
         except socket.timeout:
             print(f"  [-] TLS 443 TIMEOUT: {domain:35} -> Таймаут сокета")
@@ -108,21 +124,24 @@ def check_tls_connectivity():
         except Exception as e:
             print(f"  [-] TLS 443 FAIL: {domain:35} -> {e}")
 
+
 def check_binary_patches():
     print("=" * 60)
     print("[4/5] Проверка бинарных патчей (Обход блокировки российских аккаунтов):")
-    
+
     # Import paths from unlocker_core
     try:
         from tools.unlocker_core import get_binary_paths
+
         bin_paths = get_binary_paths()
     except Exception:
         home = os.path.expanduser("~")
         bin_paths = [
-            "/Applications/Antigravity IDE.app/Contents/Resources/app/extensions/antigravity/bin/language_server_macos_arm",
-            os.path.join(home, ".local", "bin", "agy")
+            os.path.join(home, ".gemini", "bin", "agy"),
+            os.path.join(home, ".local", "bin", "agy"),
+            "/Applications/Antigravity IDE.app/Contents/Resources/app/extensions/agy/bin/language_server_macos_arm",
         ]
-    
+
     found_any = False
     for bp in bin_paths:
         if os.path.exists(bp):
@@ -135,11 +154,15 @@ def check_binary_patches():
                 print(f"  File: {os.path.basename(bp)} ({bp})")
                 print(f"    - 'ineligible' (оригинальный блок): {inel}")
                 print(f"    - 'inexigible' (патч аккаунта):      {inex}")
-                
+
                 # Check code signature on macOS
                 if sys.platform == "darwin":
                     cs_res = subprocess.run(["codesign", "-v", bp], capture_output=True, text=True)
-                    cs_status = "ПОДПИСЬ ВАЛИДНА [OK]" if cs_res.returncode == 0 else f"ПОДПИСЬ ПОВРЕЖДЕНА (Нужен codesign): {cs_res.stderr.strip()}"
+                    cs_status = (
+                        "ПОДПИСЬ ВАЛИДНА [OK]"
+                        if cs_res.returncode == 0
+                        else f"ПОДПИСЬ ПОВРЕЖДЕНА (Нужен codesign): {cs_res.stderr.strip()}"
+                    )
                     print(f"    - macOS CodeSign: {cs_status}")
 
                 if inex > 0 and inel == 0:
@@ -154,6 +177,7 @@ def check_binary_patches():
     if not found_any:
         print("  [-] Исполняемые файлы Antigravity не найдены в стандартных путях.")
 
+
 if __name__ == "__main__":
     print("Комплексная диагностика Antigravity Unlocker...")
     check_hosts_pinning()
@@ -163,4 +187,3 @@ if __name__ == "__main__":
     check_tls_connectivity()
     check_binary_patches()
     print("=" * 60)
-

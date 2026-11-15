@@ -1,8 +1,12 @@
 import os
-import sys
 import subprocess
+import sys
 
-HOSTS_PATH = os.path.join(os.environ.get("SystemRoot", "C:\\Windows"), "System32", "drivers", "etc", "hosts") if sys.platform == "win32" else "/etc/hosts"
+HOSTS_PATH = (
+    os.path.join(os.environ.get("SystemRoot", "C:\\Windows"), "System32", "drivers", "etc", "hosts")
+    if sys.platform == "win32"
+    else "/etc/hosts"
+)
 
 BEGIN_MARKER = "# === ANTIGRAVITY_UNLOCKER_PIN_START ==="
 END_MARKER = "# === ANTIGRAVITY_UNLOCKER_PIN_END ==="
@@ -18,8 +22,12 @@ PINNED_ENTRIES = [
     ("jetski-webchannel.googleapis.com", "45.88.174.252"),
     ("alkalimakersuite-pa.googleapis.com", "45.88.174.252"),
     ("aistudio.google.com", "45.88.174.252"),
-    ("antigravity.google", "45.88.174.252")
+    ("antigravity.google", "45.88.174.252"),
+    ("storage.googleapis.com", "45.88.174.252"),
+    ("antigravity-cli-auto-updater-974169037036.us-central1.run.app", "45.88.174.252"),
+    ("feedback-pa.googleapis.com", "45.88.174.252"),
 ]
+
 
 def flush_dns():
     if sys.platform == "darwin":
@@ -33,6 +41,7 @@ def flush_dns():
                 subprocess.run(cmd, capture_output=True)
             except Exception:
                 pass
+
 
 def apply_hosts_pin():
     print(f"[+] Чтение {HOSTS_PATH}...")
@@ -78,6 +87,7 @@ def apply_hosts_pin():
         print(f"  [-] Ошибка записи hosts: {e}")
         return False
 
+
 def remove_hosts_pin():
     print(f"[+] Очистка {HOSTS_PATH} от привязок анлокера...")
     try:
@@ -109,6 +119,7 @@ def remove_hosts_pin():
     except Exception as e:
         print(f"  [-] Ошибка записи: {e}")
         return False
+
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--restore":

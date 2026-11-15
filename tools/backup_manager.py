@@ -1,14 +1,19 @@
-import os
-import sys
-import shutil
 import json
-import time
+import os
+import shutil
 import subprocess
+import sys
+import time
 from datetime import datetime
 
 BACKUP_ROOT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "backups")
 
-HOSTS_PATH = os.path.join(os.environ.get("SystemRoot", "C:\\Windows"), "System32", "drivers", "etc", "hosts") if sys.platform == "win32" else "/etc/hosts"
+HOSTS_PATH = (
+    os.path.join(os.environ.get("SystemRoot", "C:\\Windows"), "System32", "drivers", "etc", "hosts")
+    if sys.platform == "win32"
+    else "/etc/hosts"
+)
+
 
 def get_target_files():
     home = os.path.expanduser("~")
@@ -17,28 +22,53 @@ def get_target_files():
     if sys.platform == "win32":
         local_app = os.environ.get("LOCALAPPDATA", "")
         app_data = os.environ.get("APPDATA", "")
-        files.update({
-            "ide_settings": os.path.join(app_data, "Antigravity IDE", "User", "settings.json"),
-            "language_server_desktop": os.path.join(local_app, "Programs", "antigravity", "resources", "bin", "language_server.exe"),
-            "language_server_ide": os.path.join(local_app, "Programs", "Antigravity IDE", "resources", "app", "extensions", "antigravity", "bin", "language_server_windows_x64.exe"),
-            "agy": os.path.join(local_app, "Programs", "antigravity", "resources", "bin", "agy.exe")
-        })
+        user_prof = os.environ.get("USERPROFILE", home)
+        files.update(
+            {
+                "ide_settings": os.path.join(app_data, "Antigravity IDE", "User", "settings.json"),
+                "agy_gemini": os.path.join(user_prof, ".gemini", "bin", "agy.exe"),
+                "language_server_desktop": os.path.join(
+                    local_app, "Programs", "antigravity", "resources", "bin", "language_server.exe"
+                ),
+                "language_server_ide": os.path.join(
+                    local_app,
+                    "Programs",
+                    "Antigravity IDE",
+                    "resources",
+                    "app",
+                    "extensions",
+                    "antigravity",
+                    "bin",
+                    "language_server_windows_x64.exe",
+                ),
+                "agy": os.path.join(local_app, "Programs", "antigravity", "resources", "bin", "agy.exe"),
+            }
+        )
     elif sys.platform == "darwin":
-        files.update({
-            "ide_settings": os.path.join(home, "Library", "Application Support", "Antigravity IDE", "User", "settings.json"),
-            "language_server_macos_arm": "/Applications/Antigravity IDE.app/Contents/Resources/app/extensions/antigravity/bin/language_server_macos_arm",
-            "language_server_macos_x64": "/Applications/Antigravity IDE.app/Contents/Resources/app/extensions/antigravity/bin/language_server_macos_x64",
-            "agy": os.path.join(home, ".local", "bin", "agy")
-        })
+        files.update(
+            {
+                "ide_settings": os.path.join(
+                    home, "Library", "Application Support", "Antigravity IDE", "User", "settings.json"
+                ),
+                "agy_gemini": os.path.join(home, ".gemini", "bin", "agy"),
+                "language_server_macos_arm": "/Applications/Antigravity IDE.app/Contents/Resources/app/extensions/antigravity/bin/language_server_macos_arm",
+                "language_server_macos_x64": "/Applications/Antigravity IDE.app/Contents/Resources/app/extensions/antigravity/bin/language_server_macos_x64",
+                "agy": os.path.join(home, ".local", "bin", "agy"),
+            }
+        )
     else:
         # Linux
-        files.update({
-            "ide_settings": os.path.join(home, ".config", "Antigravity IDE", "User", "settings.json"),
-            "language_server_linux_x64": "/opt/Antigravity/resources/app/extensions/antigravity/bin/language_server_linux_x64",
-            "language_server_linux_arm64": "/opt/Antigravity/resources/app/extensions/antigravity/bin/language_server_linux_arm64",
-            "agy": os.path.join(home, ".local", "bin", "agy")
-        })
+        files.update(
+            {
+                "ide_settings": os.path.join(home, ".config", "Antigravity IDE", "User", "settings.json"),
+                "agy_gemini": os.path.join(home, ".gemini", "bin", "agy"),
+                "language_server_linux_x64": "/opt/Antigravity/resources/app/extensions/antigravity/bin/language_server_linux_x64",
+                "language_server_linux_arm64": "/opt/Antigravity/resources/app/extensions/antigravity/bin/language_server_linux_arm64",
+                "agy": os.path.join(home, ".local", "bin", "agy"),
+            }
+        )
     return files
+
 
 def flush_dns():
     if sys.platform == "darwin":
@@ -53,6 +83,7 @@ def flush_dns():
             except Exception:
                 pass
 
+
 def create_backup(label="auto"):
     os.makedirs(BACKUP_ROOT, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -65,7 +96,7 @@ def create_backup(label="auto"):
         "platform": sys.platform,
         "created_at": datetime.now().isoformat(),
         "files": {},
-        "nrpt_rules": []
+        "nrpt_rules": [],
     }
 
     files = get_target_files()
@@ -78,7 +109,7 @@ def create_backup(label="auto"):
                 manifest["files"][key] = {
                     "original_path": path,
                     "backup_file": dest_name,
-                    "size": os.path.getsize(path)
+                    "size": os.path.getsize(path),
                 }
             except Exception as e:
                 print(f"[-] Ошибка бэкапа {key} ({path}): {e}")
@@ -86,7 +117,12 @@ def create_backup(label="auto"):
     # Бэкап правил NRPT только для Windows
     if sys.platform == "win32":
         try:
-            cmd = ["powershell", "-NoProfile", "-Command", "Get-DnsClientNrptRule -ErrorAction SilentlyContinue | Select-Object Namespace, NameServers, Comment | ConvertTo-Json -Depth 3"]
+            cmd = [
+                "powershell",
+                "-NoProfile",
+                "-Command",
+                "Get-DnsClientNrptRule -ErrorAction SilentlyContinue | Select-Object Namespace, NameServers, Comment | ConvertTo-Json -Depth 3",
+            ]
             res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="ignore")
             if res.returncode == 0 and res.stdout.strip():
                 manifest["nrpt_rules"] = json.loads(res.stdout)
@@ -99,6 +135,7 @@ def create_backup(label="auto"):
 
     print(f"[+] Бэкап успешно создан: {backup_dir}")
     return backup_dir, manifest
+
 
 def list_backups():
     os.makedirs(BACKUP_ROOT, exist_ok=True)
@@ -115,13 +152,14 @@ def list_backups():
                 pass
     return backups
 
+
 def restore_backup(backup_path=None):
     if not backup_path:
         backups = list_backups()
         if not backups:
             print("[-] Доступных резервных копий не найдено.")
             return False
-        backup_path = backups[0][1] # Берем самый свежий
+        backup_path = backups[0][1]  # Берем самый свежий
 
     manifest_path = os.path.join(backup_path, "manifest.json")
     if not os.path.exists(manifest_path):
@@ -152,7 +190,7 @@ def restore_backup(backup_path=None):
                 os.makedirs(os.path.dirname(orig_path), exist_ok=True)
                 shutil.copy2(bak_file, orig_path)
                 print(f"  [+] Восстановлен: {orig_path}")
-                
+
                 # На macOS переподписываем
                 if sys.platform == "darwin" and ("language_server" in orig_path or "agy" in orig_path):
                     subprocess.run(["xattr", "-cr", orig_path], capture_output=True)
@@ -167,12 +205,13 @@ def restore_backup(backup_path=None):
     print(f"[+] Восстановлено файлов: {restored_count}")
     return True
 
+
 def print_backups_table():
     backups = list_backups()
     if not backups:
         print("\n  [-] Резервных копий пока нет.\n")
         return []
-    
+
     print("\n" + "=" * 80)
     print(f"{'#':<3} | {'Имя бэкапа':<35} | {'Дата создания':<20} | {'Файлов':<8}")
     print("-" * 80)
@@ -184,20 +223,21 @@ def print_backups_table():
     print("=" * 80 + "\n")
     return backups
 
+
 def interactive_cli():
     while True:
         print("\n" + "=" * 60)
         print("🛡️  УПРАВЛЕНИЕ РЕЗЕРВНЫМИ КОПИЯМИ (БЭКАПЫ)")
         print("=" * 60)
         backups = print_backups_table()
-        
+
         print("Действия:")
         if backups:
             print("  [1-N] - Восстановить выбранный бэкап по номеру")
         print("  [c]   - Создать новый бэкап сейчас")
         print("  [0]   - Вернуться в главное меню")
         print("-" * 60)
-        
+
         choice = input("Введите команду: ").strip()
         if choice == "0" or choice.lower() in ("q", "exit"):
             break
@@ -214,6 +254,7 @@ def interactive_cli():
                 print("[-] Неверный номер бэкапа.")
         else:
             print("[-] Неизвестная команда.")
+
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--restore":
