@@ -131,14 +131,24 @@ def check_binary_patches():
 
     # Import paths from unlocker_core
     try:
-        from tools.unlocker_core import get_binary_paths
+        from tools.unlocker_core import get_binary_paths, get_real_user_home
 
         bin_paths = get_binary_paths()
     except Exception:
-        home = os.path.expanduser("~")
+        sudo_user = os.environ.get("SUDO_USER")
+        if sudo_user:
+            try:
+                import pwd
+                home = pwd.getpwnam(sudo_user).pw_dir
+            except Exception:
+                home = os.path.expanduser("~")
+        else:
+            home = os.path.expanduser("~")
+
         bin_paths = [
             os.path.join(home, ".gemini", "bin", "agy"),
             os.path.join(home, ".local", "bin", "agy"),
+            "/opt/Antigravity/resources/bin/language_server",
             "/Applications/Antigravity IDE.app/Contents/Resources/app/extensions/agy/bin/language_server_macos_arm",
         ]
 

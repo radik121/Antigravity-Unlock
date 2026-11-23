@@ -25,6 +25,32 @@ from tools.proxy_manager import (
 DEFAULT_BACKEND_URL = "https://daily-cloudcode-pa.googleapis.com"
 
 
+def get_real_user_home():
+    """Возвращает домашний каталог реального пользователя, даже если скрипт запущен через sudo."""
+    sudo_user = os.environ.get("SUDO_USER")
+    if sudo_user:
+        try:
+            import pwd
+
+            return pwd.getpwnam(sudo_user).pw_dir
+        except Exception:
+            pass
+    return os.path.expanduser("~")
+
+
+def fix_user_permissions(path):
+    """Если скрипт запущен под sudo, возвращаем владение файлом/папкой реальному пользователю."""
+    sudo_uid = os.environ.get("SUDO_UID")
+    sudo_gid = os.environ.get("SUDO_GID")
+    if sudo_uid and sudo_gid:
+        try:
+            uid = int(sudo_uid)
+            gid = int(sudo_gid)
+            os.chown(path, uid, gid)
+        except Exception:
+            pass
+
+
 def is_admin():
     """Проверка наличия прав администратора / root."""
     if sys.platform == "win32":
@@ -93,7 +119,7 @@ def elevate_process(args=None):
 def get_binary_paths():
     """Поиск всех исполняемых файлов Language Server и CLI agy на текущей ОС."""
     candidate_paths = []
-    home = os.path.expanduser("~")
+    home = get_real_user_home()
 
     if sys.platform == "win32":
         local_app = os.environ.get("LOCALAPPDATA", "")
@@ -163,16 +189,28 @@ def get_binary_paths():
         candidate_paths += [
             os.path.join(home, ".gemini", "bin", "agy"),
             os.path.join(home, ".local", "bin", "agy"),
+            "/opt/Antigravity/resources/bin/language_server",
+            "/opt/antigravity/resources/bin/language_server",
             "/opt/Antigravity/resources/app/extensions/antigravity/bin/language_server_linux_x64",
             "/opt/Antigravity/resources/app/extensions/antigravity/bin/language_server_linux_arm64",
             "/opt/Antigravity IDE/resources/app/extensions/antigravity/bin/language_server_linux_x64",
             "/opt/Antigravity IDE/resources/app/extensions/antigravity/bin/language_server_linux_arm64",
             "/opt/Antigravity IDE/resources/app/extensions/agy/bin/language_server_linux_x64",
             "/opt/Antigravity IDE/resources/app/extensions/agy/bin/language_server_linux_arm64",
+            "/opt/antigravity-ide/resources/app/extensions/antigravity/bin/language_server_linux_x64",
+            "/opt/antigravity-ide/resources/app/extensions/antigravity/bin/language_server_linux_arm64",
+            "/opt/antigravity-ide/resources/app/extensions/agy/bin/language_server_linux_x64",
+            "/opt/antigravity-ide/resources/app/extensions/agy/bin/language_server_linux_arm64",
             os.path.join(home, ".local", "share", "antigravity", "bin", "language_server"),
             os.path.join(home, ".antigravity", "bin", "language_server"),
             os.path.join(home, ".antigravity", "bin", "agy"),
         ]
+        ext_dir = os.path.join(home, ".antigravity", "extensions")
+        if os.path.exists(ext_dir):
+            for root, _, files in os.walk(ext_dir):
+                for f in files:
+                    if "language_server" in f.lower() or f.lower() == "agy":
+                        candidate_paths.append(os.path.join(root, f))
 
     found = []
     for p in candidate_paths:
@@ -186,7 +224,8 @@ def stop_process_by_name(name):
     if sys.platform == "win32":
         subprocess.run(["taskkill", "/F", "/IM", name], capture_output=True)
     else:
-        subprocess.run(["pkill", "-f", name], capture_output=True)
+        # Используем точное совпадение имени процесса (-x) вместо подстроки командной строки (-f)
+        subprocess.run(["pkill", "-x", name], capture_output=True)
 
 
 def codesign_mac_binary(bpath):
@@ -211,6 +250,29 @@ def codesign_mac_binary(bpath):
         print(f"    [-] Предупреждение codesign: {e}")
 
 
+def safe_write_binary(target_path, data):
+    """Безопасная атомарная запись исполняемого файла через замену inode (избегает ETXTBSY в Linux)."""
+    dir_name = os.path.dirname(target_path)
+    base_name = os.path.basename(target_path)
+    temp_path = os.path.join(dir_name, f".{base_name}.tmp_{os.getpid()}")
+    try:
+        with open(temp_path, "wb") as f:
+            f.write(data)
+        try:
+            st = os.stat(target_path)
+            os.chmod(temp_path, st.st_mode)
+        except Exception:
+            pass
+        fix_user_permissions(temp_path)
+        os.replace(temp_path, target_path)
+    finally:
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
+
+
 def patch_binaries():
     bins = get_binary_paths()
     if not bins:
@@ -229,8 +291,7 @@ def patch_binaries():
                 stop_process_by_name(fname)
                 time.sleep(0.3)
                 new_data = data.replace(b"ineligible", b"inexigible")
-                with open(bpath, "wb") as f:
-                    f.write(new_data)
+                safe_write_binary(bpath, new_data)
                 print(f"  [+] {fname}: Успешно пропатчен ({orig} замен).")
                 # На macOS обязательно переподписываем бинарник
                 codesign_mac_binary(bpath)
@@ -257,8 +318,7 @@ def unpatch_binaries():
                 stop_process_by_name(fname)
                 time.sleep(0.3)
                 new_data = data.replace(b"inexigible", b"ineligible")
-                with open(bpath, "wb") as f:
-                    f.write(new_data)
+                safe_write_binary(bpath, new_data)
                 print(f"  [+] {fname}: Откачен обратно ({patched} замен).")
                 codesign_mac_binary(bpath)
         except Exception as e:
@@ -266,7 +326,7 @@ def unpatch_binaries():
 
 
 def configure_ide_settings(backend_url=DEFAULT_BACKEND_URL):
-    home = os.path.expanduser("~")
+    home = get_real_user_home()
     if sys.platform == "win32":
         app_data = os.environ.get("APPDATA", "")
         settings_dir = os.path.join(app_data, "Antigravity IDE", "User")
@@ -277,6 +337,7 @@ def configure_ide_settings(backend_url=DEFAULT_BACKEND_URL):
 
     settings_path = os.path.join(settings_dir, "settings.json")
     os.makedirs(settings_dir, exist_ok=True)
+    fix_user_permissions(settings_dir)
 
     data = {}
     if os.path.exists(settings_path):
@@ -290,6 +351,7 @@ def configure_ide_settings(backend_url=DEFAULT_BACKEND_URL):
     try:
         with open(settings_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4, ensure_ascii=False)
+        fix_user_permissions(settings_path)
         print(f"  [+] Antigravity IDE: Настройка jetski.cloudCodeUrl = {backend_url}")
         return True
     except Exception as e:
@@ -298,7 +360,7 @@ def configure_ide_settings(backend_url=DEFAULT_BACKEND_URL):
 
 
 def configure_env_vars(backend_url=DEFAULT_BACKEND_URL):
-    home = os.path.expanduser("~")
+    home = get_real_user_home()
     if sys.platform == "win32":
         cmd = f'[Environment]::SetEnvironmentVariable("CLOUD_CODE_URL", "{backend_url}", "User")'
         subprocess.run(["powershell", "-NoProfile", "-Command", cmd], capture_output=True)
@@ -321,6 +383,7 @@ def configure_env_vars(backend_url=DEFAULT_BACKEND_URL):
                     cleaned.append(f'export CLOUD_CODE_URL="{backend_url}"\n')
                     with open(rc_path, "w", encoding="utf-8") as f:
                         f.writelines(cleaned)
+                    fix_user_permissions(rc_path)
                 except Exception:
                     pass
 
@@ -329,7 +392,7 @@ def configure_env_vars(backend_url=DEFAULT_BACKEND_URL):
 
 
 def remove_env_vars():
-    home = os.path.expanduser("~")
+    home = get_real_user_home()
     if sys.platform == "win32":
         cmd = '[Environment]::SetEnvironmentVariable("CLOUD_CODE_URL", $null, "User")'
         subprocess.run(["powershell", "-NoProfile", "-Command", cmd], capture_output=True)
@@ -349,6 +412,7 @@ def remove_env_vars():
                     cleaned = [l for l in lines if "CLOUD_CODE_URL" not in l]
                     with open(rc_path, "w", encoding="utf-8") as f:
                         f.writelines(cleaned)
+                    fix_user_permissions(rc_path)
                 except Exception:
                     pass
 

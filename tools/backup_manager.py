@@ -16,7 +16,20 @@ HOSTS_PATH = (
 
 
 def get_target_files():
-    home = os.path.expanduser("~")
+    try:
+        from tools.unlocker_core import get_real_user_home
+        home = get_real_user_home()
+    except Exception:
+        sudo_user = os.environ.get("SUDO_USER")
+        if sudo_user:
+            try:
+                import pwd
+                home = pwd.getpwnam(sudo_user).pw_dir
+            except Exception:
+                home = os.path.expanduser("~")
+        else:
+            home = os.path.expanduser("~")
+
     files = {"hosts": HOSTS_PATH}
 
     if sys.platform == "win32":
@@ -62,6 +75,8 @@ def get_target_files():
             {
                 "ide_settings": os.path.join(home, ".config", "Antigravity IDE", "User", "settings.json"),
                 "agy_gemini": os.path.join(home, ".gemini", "bin", "agy"),
+                "language_server_desktop": "/opt/Antigravity/resources/bin/language_server",
+                "language_server_desktop_lower": "/opt/antigravity/resources/bin/language_server",
                 "language_server_linux_x64": "/opt/Antigravity/resources/app/extensions/antigravity/bin/language_server_linux_x64",
                 "language_server_linux_arm64": "/opt/Antigravity/resources/app/extensions/antigravity/bin/language_server_linux_arm64",
                 "agy": os.path.join(home, ".local", "bin", "agy"),
